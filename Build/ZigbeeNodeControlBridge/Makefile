@@ -75,6 +75,7 @@ MINIMUM_HEAP_SIZE       = 2000
 
 NODE                   ?= COORDINATOR
 GP_SUPPORT			   ?= 1
+VOVAiS			       ?= 1
 OTA                    ?= 1
 
 CRC_NEW                ?= CRC_XOR
@@ -93,7 +94,11 @@ VERSION ?= $(shell git describe --abbrev=1 --always | sed -r 's/(-.+-g|[\r\n])//
 $(info Version $(VERSION))
 
 ifneq ($(GP_SUPPORT), 1)
+ifneq ($(VOVAiS), 1)
 GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSION)_$(JENNIC_CHIP)_$(NODE)_$(BAUD)$(DEBUG_NAME)
+else
+GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSION)_$(JENNIC_CHIP)_VOVAiS_$(NODE)_$(BAUD)$(DEBUG_NAME)
+endif
 else
 GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSION)_$(JENNIC_CHIP)_GP_Proxy_$(NODE)_$(BAUD)$(DEBUG_NAME)
 endif
@@ -189,7 +194,11 @@ endif
 ifneq ($(GP_SUPPORT), 1)
 ifeq ($(NODE), COORDINATOR)
 $(info Building Node Coordinator Only...)
+ifneq ($(VOVAiS), 1)
 APP_ZPSCFG = ZigbeeNodeControlBridgeCoordinator.zpscfg
+else
+APP_ZPSCFG = ZigbeeNodeControlBridgeCoordinator_VOVAiS.zpscfg
+endif
 else
 $(info Building Node Full functionality ...)
 APP_ZPSCFG = ZigbeeNodeControlBridge.zpscfg
