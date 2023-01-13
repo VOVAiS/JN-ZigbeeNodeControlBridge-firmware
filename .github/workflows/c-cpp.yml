@@ -8,6 +8,9 @@ env:
   ARTIFACT_DIR: Build/bin
   SDK_DIR: sdk
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
