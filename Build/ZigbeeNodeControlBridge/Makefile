@@ -1,6 +1,6 @@
 ###############################################################################
 #
-# MODULE:   Makefile
+# MODULE:   Makefile test
 #
 # DESCRIPTION: Makefile for the Control Bridge
 #
