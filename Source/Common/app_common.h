@@ -46,7 +46,6 @@
 
 #ifndef APP_COMMON_H_
 #define APP_COMMON_H_
-#define ZNC_MAX_TCLK_DEVICES 70
 
 #include "ZQueue.h"
 #include "ZTimer.h"
