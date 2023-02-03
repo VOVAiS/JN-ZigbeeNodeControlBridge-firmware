@@ -3389,10 +3389,9 @@ PUBLIC bool APP_bSendHATransportKey ( uint16    u16ShortAddress,
         }
     }
 
-    bCredPresent = zps_bGetFlashCredential ( u64DeviceAddress,  &uKey, &u16Location, FALSE, FALSE  );
-    if ( ( bSetTclkFlashFeature) ||
-         ( u8Status == 1) )
-    {
+    //bCredPresent = zps_bGetFlashCredential ( u64DeviceAddress, &uKey, &u16Location, FALSE, FALSE ); 
+    if ( ( bSetTclkFlashFeature) && ( u8Status == 1) ) {
+
         extern uint32    sZpsIntStore;
         extern PUBLIC void* zps_vGetZpsMutex ( void );
         ZPS_u8ReleaseMutexLock ( zps_vGetZpsMutex , &sZpsIntStore );
@@ -3401,11 +3400,7 @@ PUBLIC bool APP_bSendHATransportKey ( uint16    u16ShortAddress,
 
         ZPS_eAplZdoAddReplaceLinkKey( u64DeviceAddress, au8Key,   ZPS_APS_UNIQUE_LINK_KEY);
         /*If credential is present roll back to confirm that key is used and not install code */
-        if(bCredPresent)
-        {
-            asTclkStruct[u16Location].u16TclkRetries = 0xFFFF;
-        }
-
+       
         ZPS_u8GrabMutexLock ( zps_vGetZpsMutex , &sZpsIntStore );
         bStatus = TRUE;
     }
