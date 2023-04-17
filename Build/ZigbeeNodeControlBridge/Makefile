@@ -88,14 +88,24 @@ ifneq ($(DEBUG), NONE)
 DEBUG_NAME  = _DEBUG_$(DEBUG)
 endif
 
-VERSION ?= $(shell git describe --abbrev=1 --always | sed -r 's/(-.+-g|[\r\n])//g' | sed -r 's/[^a-f0-9]/0/g')
+#VERSION ?= $(shell git describe --abbrev=1 --always | sed -r 's/(-.+-g|[\r\n])//g' | sed -r 's/[^a-f0-9]/0/g')
+
+VERSION ?= 0
+
+ifeq ($(VERSION), 0)
+GITC = $(shell git rev-list HEAD --count)
+VERSION = $(shell printf "%02x%02x" $(shell echo `expr  $(GITC) % 256` )  $(shell echo `expr $(GITC) / 256 + 16`) )
+VERSTR = $(shell printf "%04x" $(shell echo `expr  $(GITC) + 4096` ) )
+else
+VERSTR = $(VERSION)
+endif
 
 $(info Version $(VERSION))
 
 ifneq ($(GP_SUPPORT), 1)
-GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSION)_$(JENNIC_CHIP)_$(NODE)_$(BAUD)$(DEBUG_NAME)
+GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSTR)_$(JENNIC_CHIP)_$(NODE)_$(BAUD)$(DEBUG_NAME)
 else
-GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSION)_$(JENNIC_CHIP)_GP_Proxy_$(NODE)_$(BAUD)$(DEBUG_NAME)
+GENERATED_FILE_NAME    ?= $(TARGET)_$(VERSTR)_$(JENNIC_CHIP)_GP_Proxy_$(NODE)_$(BAUD)$(DEBUG_NAME)
 endif
 
 ###############################################################################

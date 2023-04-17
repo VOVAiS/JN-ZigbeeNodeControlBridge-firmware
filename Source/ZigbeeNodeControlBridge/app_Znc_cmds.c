@@ -249,7 +249,13 @@ PRIVATE void APP_vUpdateReportableChange( tuZCL_AttributeReportable *puAttribute
                                           uint8                     *pu8Offset );
 PRIVATE void dump_PDM(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength);
 PRIVATE void restore_PDM(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength);
+PUBLIC void APP_GetNetBackupTbl( void );
+PUBLIC void APP_GetActiveDevicesBackupTbl( void );
+PUBLIC void APP_GetDevicesBackupTbl( void );
+PUBLIC void APP_GetDevicesBackupTblShow( void );
 
+PRIVATE void APP_NetRestore(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength);
+PRIVATE void APP_DeviceRestore(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength);
 /****************************************************************************/
 /***    Exported Variables                        ***/
 /****************************************************************************/
@@ -2224,6 +2230,50 @@ PUBLIC void APP_vProcessIncomingSerialCommands ( uint8    u8RxByte )
             }
             break;
 
+            case E_SL_MSG_FULL_INFO_REQ:
+            {
+				APP_GetDevicesBackupTblShow();
+            }
+            break;
+
+            case E_SL_MSG_NET_BACKUP_REQ:
+            {
+				APP_GetNetBackupTbl();
+            }
+            break;
+
+            case E_SL_MSG_ACTIVEDEVICES_BACKUP_REQ:
+            {
+                APP_GetActiveDevicesBackupTbl();
+            }
+            break;
+
+            case E_SL_MSG_DEVICES_BACKUP_REQ:
+            {
+                APP_GetDevicesBackupTbl();
+            }
+            break;
+            
+            case E_SL_MSG_RESTORE_NET_BACKUP_REQUEST:
+            {
+                APP_NetRestore(au8LinkRxBuffer, u16PacketLength);
+            }
+            break;
+
+            case E_SL_MSG_RESTORE_DEVICE_BACKUP_REQUEST:
+            {
+                APP_DeviceRestore(au8LinkRxBuffer, u16PacketLength);
+            }
+            break;
+
+            case E_SL_MSG_RESTORE_RUNNING_STATE_REQUEST:
+            {
+			    sZllState.eState        =  NOT_FACTORY_NEW;
+			    PDM_eSaveRecordData(PDM_ID_APP_ZLL_CMSSION, &sZllState, sizeof(sZllState));
+                bResetIssued    =  TRUE;
+                ZTIMER_eStart( u8IdTimer, ZTIMER_TIME_MSEC ( 1 ) );
+            }
+            break;
             case E_SL_MSG_RESTORE_PDM_MODE: 
             {
                 sZllState.eState = PDM_UPDATE;
@@ -2255,17 +2305,423 @@ PUBLIC void APP_vProcessIncomingSerialCommands ( uint8    u8RxByte )
 
 }
 
-PRIVATE void dump_PDM( uint8 *pu8LinkRxBuffer, 
-                       uint16 u16PacketLength )
-{
+PUBLIC void APP_GetActiveDevicesBackupTbl( void ) {
+    uint16          i;
+    uint8           size=0;
+    uint16          u16Location;
+    uint64          ieee; 
+    AESSW_Block_u   uKey;
+    bool_t          bCredPresent =  FALSE;
+	uint16 u16TxSize = 0;
+    ZPS_tsNwkNib * thisNib = ZPS_psNwkNibGetHandle(ZPS_pvAplZdoGetNwkHandle());
+    for(i = 0; i < thisNib->sTblSize.u16NtActv; i++) {
+        if(thisNib->sTbl.psNtActv[i].u16NwkAddr != ZPS_NWK_INVALID_NWK_ADDR && thisNib->sTbl.psNtActv[i].u16Lookup<ZPS_MAC_ADDRESS_TABLE_SIZE) {
+	        size++;
+		}
+    }
+    uint8 au8LinkTxBuffer[size * 32 + 1 ];
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], size,       u16TxSize);
+    for(i = 0; i < thisNib->sTblSize.u16NtActv; i++) {
+        if(thisNib->sTbl.psNtActv[i].u16NwkAddr != ZPS_NWK_INVALID_NWK_ADDR && thisNib->sTbl.psNtActv[i].u16Lookup<ZPS_MAC_ADDRESS_TABLE_SIZE) {
+        	ieee=ZPS_u64NwkNibGetMappedIeeeAddr( ZPS_pvAplZdoGetNwkHandle(), thisNib->sTbl.psNtActv[i].u16Lookup);
+        	ZNC_BUF_U16_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.psNtActv[i].u16NwkAddr,       u16TxSize);
+        	ZNC_BUF_U64_UPD (&au8LinkTxBuffer[u16TxSize], ieee,       u16TxSize);
+			ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.psNtActv[i].u8ZedTimeoutindex,       u16TxSize);
+			ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.psNtActv[i].uAncAttrs.au8Field[0],       u16TxSize);
+			ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.psNtActv[i].uAncAttrs.au8Field[1],       u16TxSize);
+            bCredPresent = zps_bGetFlashCredential ( ieee,  &uKey, &u16Location, FALSE, FALSE  );
+        	ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], bCredPresent, u16TxSize);
+            if(bCredPresent) {
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[0],       u16TxSize);
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[1],       u16TxSize);
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[2],       u16TxSize);
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[3],       u16TxSize);
+            	ZNC_BUF_U16_UPD (&au8LinkTxBuffer[u16TxSize], asTclkStruct[u16Location].u16TclkRetries,       u16TxSize);
+            }else u16TxSize+=18;
+		}
+    }
+    vSL_WriteMessage(E_SL_MSG_ACTIVEDEVICES_BACKUP_RESPONSE, u16TxSize, au8LinkTxBuffer, 0 );
+}
+
+PUBLIC void APP_GetDevicesBackupTbl( void ) {
+    uint16 i;
+    uint8 size=0;
+	uint16 u16TxSize = 0;
+    uint16          u16Location;
+    uint64 ieee; 
+    AESSW_Block_u   uKey;
+    bool_t          bCredPresent =  FALSE;
+    ZPS_tsNwkNib * thisNib = ZPS_psNwkNibGetHandle(ZPS_pvAplZdoGetNwkHandle());
+    for( i=0;i<thisNib->sTblSize.u16AddrMap;i++) {
+    	if(thisNib->sTbl.pu16AddrMapNwk[i] != ZPS_NWK_INVALID_NWK_ADDR) {
+        	size++;
+        }
+    }
+    uint8 au8LinkTxBuffer[size * 32 + 1];
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], size,       u16TxSize);
+    for(i = 0; i < thisNib->sTblSize.u16AddrMap; i++) {
+        if(thisNib->sTbl.pu16AddrMapNwk[i] != ZPS_NWK_INVALID_NWK_ADDR) {
+        	ieee=ZPS_u64NwkNibGetMappedIeeeAddr( ZPS_pvAplZdoGetNwkHandle(), thisNib->sTbl.pu16AddrLookup[i]);
+        	ZNC_BUF_U16_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.pu16AddrMapNwk[i],       u16TxSize);
+        	ZNC_BUF_U64_UPD (&au8LinkTxBuffer[u16TxSize], ieee,       u16TxSize);
+            bCredPresent = zps_bGetFlashCredential ( ieee,  &uKey, &u16Location, FALSE, FALSE  );
+            u16TxSize+=3;
+        	ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], bCredPresent, u16TxSize);
+            if(bCredPresent) {
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[0],       u16TxSize);
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[1],       u16TxSize);
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[2],       u16TxSize);
+            	ZNC_BUF_U32_UPD (&au8LinkTxBuffer[u16TxSize], uKey.au32[3],       u16TxSize);
+            	ZNC_BUF_U16_UPD (&au8LinkTxBuffer[u16TxSize], asTclkStruct[u16Location].u16TclkRetries,       u16TxSize);
+            }else u16TxSize+=18;
+        }
+    }
+    vSL_WriteMessage(E_SL_MSG_DEVICES_BACKUP_RESPONSE, u16TxSize, au8LinkTxBuffer, 0 );
+}
+
+PUBLIC void APP_GetNetBackupTbl( void ) {
+    uint16 i = 0;
+    uint8 au8LinkTxBuffer[0x50];
+	uint16 u16TxSize = 0;
+    ZPS_tsNwkNib * thisNib = ZPS_psNwkNibGetHandle(ZPS_pvAplZdoGetNwkHandle());
+    ZPS_tsAplAib * tsAplAib = ZPS_psAplAibGetAib();
+	ZNC_BUF_U64_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sPersist.u64ExtPanId,       u16TxSize);
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sPersist.u8UpdateId,       u16TxSize);
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sPersist.u8ActiveKeySeqNumber,       u16TxSize);
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sPersist.u8VsChannel,       u16TxSize);
+    ZNC_BUF_U16_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sPersist.u16VsPanId,       u16TxSize);
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.psSecMatSet[0].u8KeySeqNum,       u16TxSize);
+    ZNC_BUF_U8_UPD (&au8LinkTxBuffer[u16TxSize], thisNib->sTbl.psSecMatSet[0].u8KeyType,       u16TxSize);
+    while ( i < 16 ) {
+        ZNC_BUF_U8_UPD ( &au8LinkTxBuffer [ u16TxSize ] , thisNib->sTbl.psSecMatSet[0].au8Key[i] , u16TxSize);
+        i++;
+    }
+    i=0;
+    while ( i < 16 ) {
+        ZNC_BUF_U8_UPD ( &au8LinkTxBuffer [ u16TxSize ] , tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[i] , u16TxSize);
+        i++;
+    }
+    ZNC_BUF_U16_UPD (&au8LinkTxBuffer[u16TxSize], tsAplAib->psAplDefaultTCAPSLinkKey->u32OutgoingFrameCounter,       u16TxSize);
+    vSL_WriteMessage(E_SL_MSG_NET_BACKUP_RESPONSE, u16TxSize, au8LinkTxBuffer, 0 );
+}
+PRIVATE void APP_NetRestore(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength) {
+    int i;
+    sZllState.u8DeviceType =  0;
+    sZllState.u8RawMode=RAW_MODE_ON;
+    sZllState.eState        =  NOT_FACTORY_NEW;
+    sZllState.eNodeState  =  E_RUNNING;
+
+    PDM_eSaveRecordData(PDM_ID_APP_ZLL_CMSSION, &sZllState, sizeof(sZllState));
+    ZPS_tsNwkNib * psNib = ZPS_psNwkNibGetHandle(ZPS_pvAplZdoGetNwkHandle());
+    ZPS_tsAplAib * tsAplAib = ZPS_psAplAibGetAib();
+    psNib->sTbl.psSecMatSet[0].u8KeySeqNum = pu8LinkRxBuffer[13];
+    psNib->sTbl.psSecMatSet[0].u8KeyType =  pu8LinkRxBuffer[14];
+    for ( i = 0; i < ZPS_SEC_KEY_LENGTH; i++ ) {
+        psNib->sTbl.psSecMatSet[0].au8Key[i] =  pu8LinkRxBuffer[15 + i];
+    }
+    tsAplAib->psAplDefaultTCAPSLinkKey->u32OutgoingFrameCounter = ZNC_RTN_U16 ( pu8LinkRxBuffer, 31 );
+    for ( i = 0; i < ZPS_SEC_KEY_LENGTH; i++ ) {
+        tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[i] =  pu8LinkRxBuffer[33 + i];
+    }
+
+	APP_vConfigureDevice ( 0 );
+    ZPS_vNwkNibSetChannel ( ZPS_pvAplZdoGetNwkHandle(), pu8LinkRxBuffer[10]);
+    ZPS_vNwkNibSetPanId (ZPS_pvAplZdoGetNwkHandle(), ZNC_RTN_U16 ( pu8LinkRxBuffer, 11 ) );
+    ZPS_vNwkNibSetExtPanId( ZPS_pvAplZdoGetNwkHandle(), ZNC_RTN_U64 ( pu8LinkRxBuffer, 0  ) );
+	ZPS_eAplAibSetApsUseExtendedPanId ( ZNC_RTN_U64 ( pu8LinkRxBuffer, 0  ) );
+    ZPS_vNwkNibSetUpdateId ( ZPS_pvAplZdoGetNwkHandle() ,  pu8LinkRxBuffer[8] );
+    ZPS_eAplAibSetApsChannelMask ( pu8LinkRxBuffer[10] );
+	ZPS_vNwkNibSetNwkAddr ( ZPS_pvAplZdoGetNwkHandle(), 0);
+
+    /* Add Key data into the NIB in first Key entry */
+    ZPS_vNwkNibSetKeySeqNum ( ZPS_pvAplZdoGetNwkHandle(), pu8LinkRxBuffer[9] );
+	ZPS_eAplAibSetApsTrustCenterAddress ( ZPS_u64AplZdoGetIeeeAddr() );	
+	ZPS_eAplZdoGroupEndpointAdd ( 0x385, 0x01 );
+    ZPS_vSaveAllZpsRecords();
+
+    bResetIssued    =  TRUE;
+    ZTIMER_eStart( u8IdTimer, ZTIMER_TIME_MSEC ( 1 ) );
+}
+PRIVATE void APP_DeviceRestore(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength) {
+    uint16 u16DataBytesRead, u16Location;
+    uint16 i;
+	uint64 u64Address;
+	uint16 u16Address;
+	uint8          bStatus[1];
+	bStatus[0]=1;
+	u16Address = ZNC_RTN_U16 ( pu8LinkRxBuffer, 1 );
+	u64Address = ZNC_RTN_U64 ( pu8LinkRxBuffer, 3 );
+    uint64 t64NwkAddr[ZPS_MAC_ADDRESS_TABLE_SIZE];
+    uint16 nwk64=0xffff;
+
+    PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_NWK_ADDRESS_MAP, &t64NwkAddr, sizeof(uint64) * ZPS_MAC_ADDRESS_TABLE_SIZE, &u16DataBytesRead );
+	for(i=0;i<ZPS_MAC_ADDRESS_TABLE_SIZE;i++){
+		if(t64NwkAddr[i]==u64Address){
+			nwk64=i;
+			break;
+		}
+	}
+	if(nwk64==0xffff)
+	for(i=0;i<ZPS_MAC_ADDRESS_TABLE_SIZE;i++){
+		if(t64NwkAddr[i]==0x0){
+			nwk64=i;
+			t64NwkAddr[i]=u64Address;
+			break;
+		}
+	}
+	if(nwk64==0xffff) {
+		bStatus[0] = 0;
+		vSL_WriteMessage ( E_SL_MSG_RESTORE_DEVICE_BACKUP_RESPONSE, 1, bStatus, 0 );
+		return;
+	}
+    uint16 t16AddrNwk[ZPS_ADDRESS_MAP_TABLE_SIZE];
+   	uint16 t16Map[ZPS_ADDRESS_MAP_TABLE_SIZE];
+	ZPS_tsNwkActvNtEntry tmpNwkActvNtTable[ZPS_NEIGHBOUR_TABLE_SIZE];
+    PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_CHILD_TABLE, &tmpNwkActvNtTable, sizeof(ZPS_tsNwkActvNtEntry) * ZPS_NEIGHBOUR_TABLE_SIZE, &u16DataBytesRead );
+   	PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_SHORT_ADDRESS_MAP, &t16AddrNwk, sizeof(uint16) * ZPS_ADDRESS_MAP_TABLE_SIZE, &u16DataBytesRead );
+	PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_ADDRESS_MAP_TABLE, &t16Map,  sizeof(uint16) * ZPS_ADDRESS_MAP_TABLE_SIZE, &u16DataBytesRead );
+	for(i=0;i<ZPS_ADDRESS_MAP_TABLE_SIZE;i++){
+		if(t16AddrNwk[i]==u16Address || t16Map[i]==nwk64){
+			t16AddrNwk[i]=ZPS_NWK_INVALID_NWK_ADDR;
+			t16Map[i]=0xffff;
+			//break;
+		}
+	}
+	for(i=0;i<ZPS_NEIGHBOUR_TABLE_SIZE;i++){
+		if(tmpNwkActvNtTable[i].u16NwkAddr==u16Address || tmpNwkActvNtTable[i].u16Lookup==nwk64) {
+			tmpNwkActvNtTable[i].u16NwkAddr=ZPS_NWK_INVALID_NWK_ADDR;
+			tmpNwkActvNtTable[i].u16Lookup=0xffff;
+			//break;
+		}
+	}
+
+	if(pu8LinkRxBuffer[0]==0) {
+		for(i=0;i<ZPS_ADDRESS_MAP_TABLE_SIZE;i++){
+			if(t16AddrNwk[i]==ZPS_NWK_INVALID_NWK_ADDR && t16Map[i]==0xffff){
+				t16AddrNwk[i]=u16Address;
+				t16Map[i]=nwk64;
+				break;
+			}
+		}
+		bStatus[0] = 1;
+	}else{
+		for(i=0;i<ZPS_NEIGHBOUR_TABLE_SIZE;i++){
+			if(tmpNwkActvNtTable[i].u16NwkAddr==ZPS_NWK_INVALID_NWK_ADDR) {
+				tmpNwkActvNtTable[i].u16NwkAddr=u16Address;
+				tmpNwkActvNtTable[i].u16Lookup=nwk64;
+		        tmpNwkActvNtTable[i].u8TxFailed=0;
+        		tmpNwkActvNtTable[i].u8LinkQuality=0;
+		        tmpNwkActvNtTable[i].u8Age=0; 
+        		tmpNwkActvNtTable[i].u8ZedTimeoutindex=pu8LinkRxBuffer[13];
+		        tmpNwkActvNtTable[i].i8TXPower=0x7f;
+        		tmpNwkActvNtTable[i].u8MacID=0;
+		        tmpNwkActvNtTable[i].uAncAttrs.au8Field[0]=pu8LinkRxBuffer[11];
+        		tmpNwkActvNtTable[i].uAncAttrs.au8Field[1]=pu8LinkRxBuffer[12];
+				break;
+			}
+		}
+		bStatus[0] = 2;
+	}
+	PDM_eSaveRecordData(PDM_ID_INTERNAL_NWK_ADDRESS_MAP,    &t64NwkAddr,            sizeof(uint64) * ZPS_MAC_ADDRESS_TABLE_SIZE );
+    PDM_eSaveRecordData(PDM_ID_INTERNAL_SHORT_ADDRESS_MAP,  &t16AddrNwk,                 sizeof(uint16) * ZPS_ADDRESS_MAP_TABLE_SIZE);
+   	PDM_eSaveRecordData(PDM_ID_INTERNAL_ADDRESS_MAP_TABLE,  &t16Map,              sizeof(uint16) * ZPS_ADDRESS_MAP_TABLE_SIZE);
+	PDM_eSaveRecordData(PDM_ID_INTERNAL_CHILD_TABLE,        &tmpNwkActvNtTable,                 sizeof( ZPS_tsNwkActvNtEntry ) * ZPS_NEIGHBOUR_TABLE_SIZE );
+
+    uint8 au8Key[16] = { 0x5a, 0x69, 0x67, 0x42, 0x65, 0x65, 0x41, 0x6c, 0x6c, 0x69, 0x61, 0x6e, 0x63, 0x65, 0x30, 0x39 }; // ZigBeeAlliance09
+    if(pu8LinkRxBuffer[14]!=0) {
+		for ( i = 0; i < ZPS_SEC_KEY_LENGTH; i++ ) {
+    		au8Key[i] = pu8LinkRxBuffer[15+i];
+		}
+		bStatus[0]+=4;
+	}
+    ZPS_eAplZdoAddReplaceLinkKey( u64Address, au8Key,   ZPS_APS_UNIQUE_LINK_KEY); //ZPS_APS_GLOBAL_LINK_KEY
+    //ZPS_bAplZdoTrustCenterSetDevicePermissions(u64Address, ZPS_DEVICE_PERMISSIONS_ALL_PERMITED);
+    
+	bool_t          bCredPresent =  FALSE;
+	bCredPresent = zps_bGetFlashCredential ( u64Address,  &au8Key, &u16Location, FALSE, FALSE  );
+    if(bCredPresent) {
+    	//ZPS_TclkDescriptorEntry tmpZPS_TclkDescriptorEntry[ZNC_MAX_TCLK_DEVICES];
+	    //PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_TC_LOCATIONS, &tmpZPS_TclkDescriptorEntry, sizeof(ZPS_TclkDescriptorEntry) * ZNC_MAX_TCLK_DEVICES, &u16DataBytesRead );
+		//tmpZPS_TclkDescriptorEntry[u16Location].u16TclkRetries = ZNC_RTN_U16 ( pu8LinkRxBuffer, 31 );
+       	asTclkStruct[u16Location].u16TclkRetries = ZNC_RTN_U16 ( pu8LinkRxBuffer, 31 );
+       	PDM_eSaveRecordData(PDM_ID_INTERNAL_TC_LOCATIONS, &asTclkStruct, sizeof( ZPS_TclkDescriptorEntry ) * ZNC_MAX_TCLK_DEVICES );
+       	//PDM_eSaveRecordData(PDM_ID_INTERNAL_TC_LOCATIONS, &tmpZPS_TclkDescriptorEntry, sizeof( ZPS_TclkDescriptorEntry ) * ZNC_MAX_TCLK_DEVICES );
+    }
+    
+	vSL_WriteMessage ( E_SL_MSG_RESTORE_DEVICE_BACKUP_RESPONSE, 1, bStatus, 0 ); // ZPS_E_SUCCESS : ZPS_APL_APS_E_TABLE_FULL
+}
+PUBLIC void APP_GetDevicesBackupTblShow( void ) {
+    uint16 u16DataBytesRead;
+    uint16 i;
+    uint8 size;
+	uint32 pu32a,pu32b;
+    ZPS_tsNwkNib * thisNib = ZPS_psNwkNibGetHandle(ZPS_pvAplZdoGetNwkHandle());
+    ZPS_tsAplAib * tsAplAib = ZPS_psAplAibGetAib();
+	typedef struct {
+	    uint64  u64ApsTrustCenterAddress;
+    	uint64  u64ApsUseExtendedPanid;
+	    bool_t  bApsDesignatedCoordinator;
+    	bool_t  bApsUseInsecureJoin;
+	    bool_t  bDecryptInstallCode;
+    	uint8   u8KeyType;
+	} lZPS_tsAplAib;
+    ZPS_tsNWkNibPersist tmpZPS_tsNWkNibPersist;
+    tsZllState tmptsZllState;
+
+    PDM_eReadDataFromRecord ( PDM_ID_APP_ZLL_CMSSION, &tmptsZllState, sizeof ( tsZllState ), &u16DataBytesRead );
+    vLog_Printf ( TRUE, LOG_INFO, "\nChannel: %d", tmptsZllState.u8MyChannel);
+    vLog_Printf ( TRUE, LOG_INFO, "\nAddr: %04x", tmptsZllState.u16MyAddr);
+    vLog_Printf ( TRUE, LOG_INFO, "\nState: %02x", tmptsZllState.eState);
+	
+    lZPS_tsAplAib tmpZPS_tsAplAib;
+	PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_AIB, &tmpZPS_tsAplAib, sizeof ( tmpZPS_tsAplAib ), &u16DataBytesRead );
+    vLog_Printf ( TRUE, LOG_INFO, "\n\nApsTrustCenterAddress: %016llx", tmpZPS_tsAplAib.u64ApsTrustCenterAddress );
+    vLog_Printf ( TRUE, LOG_INFO, "\nApsUseExtendedPanid: %016llx", tmpZPS_tsAplAib.u64ApsUseExtendedPanid );
+    if(tmpZPS_tsAplAib.bApsDesignatedCoordinator) vLog_Printf ( TRUE, LOG_INFO, "\nApsDesignatedCoordinator");
+    if(tmpZPS_tsAplAib.bApsUseInsecureJoin) vLog_Printf ( TRUE, LOG_INFO, "\nApsUseInsecureJoin");
+    if(tmpZPS_tsAplAib.bDecryptInstallCode) vLog_Printf ( TRUE, LOG_INFO, "\nDecryptInstallCode");
+    vLog_Printf ( TRUE, LOG_INFO, "\nKeyType: %02x", tmpZPS_tsAplAib.u8KeyType );
+    PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_NIB_PERSIST, &tmpZPS_tsNWkNibPersist, sizeof(tmpZPS_tsNWkNibPersist), &u16DataBytesRead );
+    vLog_Printf ( TRUE, LOG_INFO, "\n\nUpdateId: %02x", tmpZPS_tsNWkNibPersist.u8UpdateId );
+    vLog_Printf ( TRUE, LOG_INFO, "\nActiveKeySeqNumber: %02x", tmpZPS_tsNWkNibPersist.u8ActiveKeySeqNumber );
+    //vLog_Printf ( TRUE, LOG_INFO, "\nVsDepth: %02x", tmpZPS_tsNWkNibPersist.u8VsDepth );
+    //vLog_Printf ( TRUE, LOG_INFO, "\nCapabilityInformation: %02x", tmpZPS_tsNWkNibPersist.u8CapabilityInformation );
+    vLog_Printf ( TRUE, LOG_INFO, "\nVsChannel: %02x", tmpZPS_tsNWkNibPersist.u8VsChannel );
+    vLog_Printf ( TRUE, LOG_INFO, "\nParentTimeoutMethod: %02x", tmpZPS_tsNWkNibPersist.u8ParentTimeoutMethod );
+    //vLog_Printf ( TRUE, LOG_INFO, "\nVsAuxChannel: %02x", tmpZPS_tsNWkNibPersist.u8VsAuxChannel );
+    vLog_Printf ( TRUE, LOG_INFO, "\nMacEnhanced: %02x", tmpZPS_tsNWkNibPersist.u8MacEnhanced );
+    vLog_Printf ( TRUE, LOG_INFO, "\nVsPanId: %04x", tmpZPS_tsNWkNibPersist.u16VsPanId );
+    vLog_Printf ( TRUE, LOG_INFO, "\nNwkAddr: %04x", tmpZPS_tsNWkNibPersist.u16NwkAddr );
+    vLog_Printf ( TRUE, LOG_INFO, "\nVsParentAddr: %04x", tmpZPS_tsNWkNibPersist.u16VsParentAddr );
+    vLog_Printf ( TRUE, LOG_INFO, "\nExtPanId: %016llx", tmpZPS_tsNWkNibPersist.u64ExtPanId );
+
+	PDM_eGetBitmap(0xF106, &pu32a, &pu32b);
+	vLog_Printf ( TRUE, LOG_INFO, "\n\nCounter bitmap: %d (%08x) base %d + %d", pu32a + pu32b, pu32a + pu32b, pu32a, pu32b );
+
+	vLog_Printf ( TRUE, LOG_INFO, "\n\n ActiveNeighbourTableSize: %d AddressMapTableSize: %d MacTableSize: %d RoutingTableSize: %d ChildTableSize: %d SecurityMaterialSets: %d BindingTableSize: %d GroupTableSize: %d",
+		ZPS_NEIGHBOUR_TABLE_SIZE, ZPS_ADDRESS_MAP_TABLE_SIZE, ZPS_MAC_ADDRESS_TABLE_SIZE, ZPS_ROUTING_TABLE_SIZE, ZPS_CHILD_TABLE_SIZE, ZPS_BINDING_TABLE_SIZE, ZPS_GROUP_TABLE_SIZE
+	);
+
+    vLog_Printf ( TRUE, LOG_INFO, "NT: Size: %d: Record %d: %d: Total: %d ", thisNib->sTblSize.u16NtActv, sizeof(ZPS_tsNwkActvNtEntry), (thisNib->sTblSize.u16NtActv * sizeof(ZPS_tsNwkActvNtEntry)));
+
+    vLog_Printf ( TRUE, LOG_INFO, "Routing Table: Size: %d: Record %d: %d: Total: %d ", thisNib->sTblSize.u16Rt, sizeof(ZPS_tsNwkRtEntry),(thisNib->sTblSize.u16Rt * sizeof(ZPS_tsNwkRtEntry)));
+
+    vLog_Printf ( TRUE, LOG_INFO, "Route Record: Size: %d: Record %d: %d: Total: %d ", thisNib->sTblSize.u16Rct, sizeof(ZPS_tsNwkRctEntry), (thisNib->sTblSize.u16Rct * sizeof(ZPS_tsNwkRctEntry)));
+
+	//: %d RouteDiscoveryTableSize: %d BroadcastTransactionTableSize: %d RouteRecordTableSize: %d
+    uint8 tmpBindingTable[ZPS_BINDING_TABLE_SIZE * 8];
+    PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_BINDS, &tmpBindingTable,  ZPS_BINDING_TABLE_SIZE * 8, &u16DataBytesRead );
+    for(i = 0; i < ZPS_BINDING_TABLE_SIZE * 8; i++) {
+    	if(tmpBindingTable[i]!=0)
+	        vLog_Printf ( TRUE, LOG_INFO, "\nBinds: [%02x] %02x", i, tmpBindingTable[i] );
+    }
+    ZPS_tsAPdmGroupTableEntry tmpZPS_tsAPdmGroupTableEntry[ZPS_GROUP_TABLE_SIZE];
+    PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_GROUPS, &tmpZPS_tsAPdmGroupTableEntry, sizeof(tmpZPS_tsAPdmGroupTableEntry), &u16DataBytesRead );
+    for(i = 0; i<ZPS_GROUP_TABLE_SIZE; i++) {
+	    vLog_Printf ( TRUE, LOG_INFO, "\nGroupid: %04x BitMap: %04x", tmpZPS_tsAPdmGroupTableEntry[i].u16Groupid, tmpZPS_tsAPdmGroupTableEntry[i].u16BitMap );
+    }
+	for(i=0;i<thisNib->sTblSize.u8SecMatSet;i++) {
+	    vLog_Printf ( TRUE, LOG_INFO, "\n\nSecKey: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x SecKeySeqNum: %02x SecKeySeqType: %02x\n", thisNib->sTbl.psSecMatSet[i].au8Key[0], thisNib->sTbl.psSecMatSet[i].au8Key[1], thisNib->sTbl.psSecMatSet[i].au8Key[2], thisNib->sTbl.psSecMatSet[i].au8Key[3], thisNib->sTbl.psSecMatSet[i].au8Key[4], thisNib->sTbl.psSecMatSet[i].au8Key[5], thisNib->sTbl.psSecMatSet[i].au8Key[6], thisNib->sTbl.psSecMatSet[i].au8Key[7], thisNib->sTbl.psSecMatSet[i].au8Key[8], thisNib->sTbl.psSecMatSet[i].au8Key[9], thisNib->sTbl.psSecMatSet[i].au8Key[10], thisNib->sTbl.psSecMatSet[i].au8Key[11], thisNib->sTbl.psSecMatSet[i].au8Key[12], thisNib->sTbl.psSecMatSet[i].au8Key[13], thisNib->sTbl.psSecMatSet[i].au8Key[14], thisNib->sTbl.psSecMatSet[i].au8Key[15], thisNib->sTbl.psSecMatSet[i].u8KeySeqNum, thisNib->sTbl.psSecMatSet[i].u8KeyType );
+	}
+
+    vLog_Printf ( TRUE, LOG_INFO, "\nDefault LK MAC: %016llx [%04x] ApsKey: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x Outgoing FC: %d", ZPS_u64NwkNibGetMappedIeeeAddr(ZPS_pvAplZdoGetNwkHandle(),tsAplAib->psAplDefaultTCAPSLinkKey->u16ExtAddrLkup), tsAplAib->psAplDefaultTCAPSLinkKey->u16ExtAddrLkup, tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[0], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[1], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[2], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[3], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[4], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[5], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[6], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[7], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[8], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[9], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[10], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[11], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[12], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[13], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[14], tsAplAib->psAplDefaultTCAPSLinkKey->au8LinkKey[15], tsAplAib->psAplDefaultTCAPSLinkKey->u32OutgoingFrameCounter);
+
+   	if( PDM_bDoesDataExist(PDM_ID_INTERNAL_APS_KEYS, &u16DataBytesRead)!=0) {
+		size=u16DataBytesRead / sizeof(ZPS_tsAplApsKeyDescriptorEntry);
+    	ZPS_tsAplApsKeyDescriptorEntry tmpzps_tsAplApsKeyDescriptorTable[size];
+    	PDM_eReadDataFromRecord (PDM_ID_INTERNAL_APS_KEYS, &tmpzps_tsAplApsKeyDescriptorTable, size * sizeof(ZPS_tsAplApsKeyDescriptorEntry), &u16DataBytesRead );
+        for(i = 0; i < size; i++) {
+            if(i==0) {
+                vLog_Printf ( TRUE, LOG_INFO, "\nTouchLink Key: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x ExtAddr: %04x FrameCount: %08x", tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[0], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[1], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[2], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[3], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[4], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[5], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[6], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[7], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[8], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[9], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[10], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[11], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[12], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[13], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[14], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[15], tmpzps_tsAplApsKeyDescriptorTable[i].u16ExtAddrLkup, tmpzps_tsAplApsKeyDescriptorTable[i].u32OutgoingFrameCounter);
+            }else if(i==1) {
+                vLog_Printf ( TRUE, LOG_INFO, "\nDefault TC Link Key: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x ExtAddr: %04x FrameCount: %08x", tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[0], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[1], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[2], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[3], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[4], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[5], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[6], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[7], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[8], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[9], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[10], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[11], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[12], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[13], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[14], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[15], tmpzps_tsAplApsKeyDescriptorTable[i].u16ExtAddrLkup, tmpzps_tsAplApsKeyDescriptorTable[i].u32OutgoingFrameCounter);
+            }else if(i==2) {
+                vLog_Printf ( TRUE, LOG_INFO, "\nDefault Distributed APS Link Key: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x ExtAddr: %04x FrameCount: %08x", tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[0], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[1], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[2], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[3], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[4], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[5], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[6], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[7], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[8], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[9], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[10], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[11], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[12], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[13], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[14], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[15], tmpzps_tsAplApsKeyDescriptorTable[i].u16ExtAddrLkup, tmpzps_tsAplApsKeyDescriptorTable[i].u32OutgoingFrameCounter);
+            }else if(i==3) {
+                vLog_Printf ( TRUE, LOG_INFO, "\nDefault Global APS LinkKey: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x ExtAddr: %04x FrameCount: %08x", tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[0], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[1], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[2], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[3], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[4], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[5], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[6], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[7], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[8], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[9], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[10], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[11], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[12], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[13], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[14], tmpzps_tsAplApsKeyDescriptorTable[i].au8LinkKey[15], tmpzps_tsAplApsKeyDescriptorTable[i].u16ExtAddrLkup, tmpzps_tsAplApsKeyDescriptorTable[i].u32OutgoingFrameCounter);
+            }
+        }
+    }
+
+    uint8 tmpzps_tsAplTCDeviceTable[ZNC_MAX_TCLK_DEVICES * 4];
+    ZPS_TclkDescriptorEntry tmpZPS_TclkDescriptorEntry[ZNC_MAX_TCLK_DEVICES];
+    size=ZNC_MAX_TCLK_DEVICES;
+
+	if( PDM_bDoesDataExist(PDM_ID_INTERNAL_TC_TABLE, &u16DataBytesRead)!=0 && u16DataBytesRead != ZNC_MAX_TCLK_DEVICES * 4) {
+		vLog_Printf ( TRUE, LOG_INFO, "\nTcbl size mismatch: %d now [%d]", ZNC_MAX_TCLK_DEVICES, u16DataBytesRead/4);
+		if(u16DataBytesRead/4<ZNC_MAX_TCLK_DEVICES) size=u16DataBytesRead/4;
+	}
+	PDM_eReadPartialDataFromExistingRecord ( PDM_ID_INTERNAL_TC_TABLE, 0, &tmpzps_tsAplTCDeviceTable, size * 4, &u16DataBytesRead );   	
+    for(i = 0; i < size; i++) {
+        if(tmpzps_tsAplTCDeviceTable[i*4]!=0xff && tmpzps_tsAplTCDeviceTable[i*4 + 1] != 0xff && tmpzps_tsAplTCDeviceTable[i*4 + 2] != 0 && tmpzps_tsAplTCDeviceTable[i*4 + 3] != 0) {
+		    vLog_Printf ( TRUE, LOG_INFO, "\nTcbl[%02x]: %02x%02x %02x%02x", i, tmpzps_tsAplTCDeviceTable[i*4], tmpzps_tsAplTCDeviceTable[i*4 + 1], tmpzps_tsAplTCDeviceTable[i*4 + 2], tmpzps_tsAplTCDeviceTable[i*4 + 3]);
+		}
+    }
+	size=ZNC_MAX_TCLK_DEVICES;
+	if( PDM_bDoesDataExist(PDM_ID_INTERNAL_TC_LOCATIONS, &u16DataBytesRead)!=0 && u16DataBytesRead != ZNC_MAX_TCLK_DEVICES * 4) {
+		vLog_Printf ( TRUE, LOG_INFO, "\nTclk size mismatch: %d now [%d]", ZNC_MAX_TCLK_DEVICES, u16DataBytesRead/sizeof(ZPS_TclkDescriptorEntry));
+		if(u16DataBytesRead/sizeof(ZPS_TclkDescriptorEntry)<ZNC_MAX_TCLK_DEVICES) size=u16DataBytesRead/sizeof(ZPS_TclkDescriptorEntry);
+	}
+    PDM_eReadPartialDataFromExistingRecord ( PDM_ID_INTERNAL_TC_LOCATIONS, 0, &tmpZPS_TclkDescriptorEntry,  size * sizeof(ZPS_TclkDescriptorEntry), &u16DataBytesRead );
+	for(i = 0; i < size; i++) {
+    	if(tmpZPS_TclkDescriptorEntry[i].u16CredOffset!=0xffff || tmpZPS_TclkDescriptorEntry[i].u16TclkRetries!=0xffff)
+	        vLog_Printf ( TRUE, LOG_INFO, "\nTclk[%02x]: %04x %04x", i, tmpZPS_TclkDescriptorEntry[i].u16CredOffset, tmpZPS_TclkDescriptorEntry[i].u16TclkRetries);
+    }
+	vLog_Printf ( TRUE, LOG_INFO, "\n\nDevices:");
+    uint16          u16Location;
+    uint64 ieee; 
+    AESSW_Block_u   uKey;
+    bool_t          bCredPresent =  FALSE;
+    for( i=0;i<thisNib->sTblSize.u16AddrMap;i++) {
+    	if(thisNib->sTbl.pu16AddrMapNwk[i] != ZPS_NWK_INVALID_NWK_ADDR) {
+	        ieee = ZPS_u64NwkNibGetMappedIeeeAddr( ZPS_pvAplZdoGetNwkHandle(), thisNib->sTbl.pu16AddrLookup[i]);
+            vLog_Printf ( TRUE, LOG_INFO, "\nAddr[%02x]: M[%04x] %016llx", i, thisNib->sTbl.pu16AddrMapNwk[i], ieee);
+            bCredPresent = zps_bGetFlashCredential ( ieee,  &uKey, &u16Location, FALSE, FALSE  );
+            bCredPresent = zps_bGetFlashCredential ( ieee,  &uKey, &u16Location, FALSE, FALSE  );
+            if(bCredPresent) {
+	            vLog_Printf ( TRUE, LOG_INFO, "\nsec: M[%04x] %08lx%08lx%08lx%08lx [%04x %04x]", u16Location, uKey.au32[0], uKey.au32[1], uKey.au32[2], uKey.au32[3], asTclkStruct[u16Location].u16CredOffset, asTclkStruct[u16Location].u16TclkRetries);
+                if(!memcmp(sBDB.pu8DefaultTCLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nTCLinkKey");
+                }else if(!memcmp(sBDB.pu8DistributedLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nDistributedLinkKey");
+                }else if(!memcmp(sBDB.pu8TouchLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nTouchLinkKey");
+                }else if(!memcmp(sBDB.pu8PreConfgLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nPreConfgLinkKey");
+                }
+            }
+        }
+    }
+    for(i = 0; i < thisNib->sTblSize.u16NtActv; i++) {
+        if(thisNib->sTbl.psNtActv[i].u16NwkAddr != ZPS_NWK_INVALID_NWK_ADDR /*&& thisNib->sTbl.psNtActv[i].u16Lookup<ZPS_MAC_ADDRESS_TABLE_SIZE*/) {
+        	ieee = ZPS_u64NwkNibGetMappedIeeeAddr( ZPS_pvAplZdoGetNwkHandle(), thisNib->sTbl.psNtActv[i].u16Lookup);
+        	vLog_Printf ( TRUE, LOG_INFO, "\nAddr[%02x]: A[%04x] %016llx [0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x, 0x%02x]", i, thisNib->sTbl.psNtActv[i].u16NwkAddr, ieee, thisNib->sTbl.psNtActv[i].u8TxFailed, thisNib->sTbl.psNtActv[i].u8LinkQuality, thisNib->sTbl.psNtActv[i].u8Age, thisNib->sTbl.psNtActv[i].u8ZedTimeoutindex, thisNib->sTbl.psNtActv[i].i8TXPower, thisNib->sTbl.psNtActv[i].u8MacID, thisNib->sTbl.psNtActv[i].uAncAttrs.au8Field[0], thisNib->sTbl.psNtActv[i].uAncAttrs.au8Field[1]);
+            bCredPresent = zps_bGetFlashCredential ( ieee,  &uKey, &u16Location, FALSE, FALSE );
+            if(bCredPresent) {
+	            vLog_Printf ( TRUE, LOG_INFO, "\nsec: M[%04x] %08lx%08lx%08lx%08lx [%04x %04x]", u16Location, uKey.au32[0], uKey.au32[1], uKey.au32[2], uKey.au32[3], asTclkStruct[u16Location].u16CredOffset, asTclkStruct[u16Location].u16TclkRetries);
+                if(!memcmp(sBDB.pu8DefaultTCLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nTCLinkKey");
+                }else if(!memcmp(sBDB.pu8DistributedLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nDistributedLinkKey");
+                }else if(!memcmp(sBDB.pu8TouchLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nTouchLinkKey");
+                }else if(!memcmp(sBDB.pu8PreConfgLinkKey, &uKey.au8[0], ZPS_SEC_KEY_LENGTH)) {
+                    vLog_Printf ( TRUE, LOG_INFO, "\nPreConfgLinkKey");
+                }
+        	}
+		}
+    }
+
+    for ( i = 0 ; i < (tsAplAib->psAplDeviceKeyPairTable->u16SizeOfKeyDescriptorTable + 1) ; i++ ) {
+        vLog_Printf ( TRUE, LOG_INFO, "\nMAC: %016llx ApsKey: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x Incoming FC: %d Outgoing FC: %d", ZPS_u64NwkNibGetMappedIeeeAddr(ZPS_pvAplZdoGetNwkHandle(),tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].u16ExtAddrLkup), tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[0], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[1], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[2], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[3], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[4], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[5], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[6], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[7], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[8], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[9], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[10], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[11], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[12], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[13], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[14], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].au8LinkKey[15], tsAplAib->pu32IncomingFrameCounter[i], tsAplAib->psAplDeviceKeyPairTable->psAplApsKeyDescriptorEntry[i].u32OutgoingFrameCounter );
+    }
+}
+
+PRIVATE void dump_PDM( uint8 *pu8LinkRxBuffer, uint16 u16PacketLength ) {
     uint16    i;
-    uint16    offset=0;
-    uint16    found;
     uint16    dataLength;
     uint16    u16DataBytesRead;
-    uint16    hits=0;
-    uint16    fullsize=2;
-    uint16    pdm_addresses[17] = { 0x0010, 0xf000, 0xf001, 0xf002, 0xf003, 0xf004, 0xf005, 0xf006, 0xf100, 0xf101, 0xf102, 0xf103, 0xf104, 0xf105, 0xf106, 0x0001, 0x0002, 0x0003 };
+    uint16    pdm_addresses[18] = { 0x0010, 0xf000, 0xf001, 0xf002, 0xf003, 0xf004, 0xf005, 0xf006, 0xf100, 0xf101, 0xf102, 0xf103, 0xf104, 0xf105, 0xf106, 0x0001, 0x0002, 0x0003 };
     uint8     tmp[0x800];
     uint16    addr = ZNC_RTN_U16(pu8LinkRxBuffer, 0);
 
@@ -2327,36 +2783,27 @@ PRIVATE void restore_PDM(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength)
     uint16    u16DataBytesRead;
     uint16    blockstart = 0;
     uint8     tmp[0x800];
-	uint16    addr =     ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 0  );//PDM address
-	uint16    size =     ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 2  );//data size
-	uint16    fullsize = ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 4  );//PDM size
-	uint16    offset =   ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 6  );//data offset
+	uint16    addr =     ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 0 );//PDM address
+	uint16    size =     ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 2 );//data size
+	uint16    fullsize = ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 4 );//PDM size
+	uint16    offset =   ZNC_RTN_U16 ( pu8LinkRxBuffer, blockstart + 6 );//data offset
 
    	vLog_Printf ( TRUE, LOG_INFO, "\n**Restore data addr: %04x size: %04x [%04x] %04x**\n", addr, size, fullsize, offset);
 
-	if( PDM_bDoesDataExist( addr, &dataLength ) ) 
-    {
+	if( PDM_bDoesDataExist( addr, &dataLength ) ) {
 		PDM_eReadDataFromRecord ( addr, &tmp, dataLength, &u16DataBytesRead );
-		for( i=0; i<size; i++ )
-        {
+		for( i=0; i<size; i++ ) {
 			tmp[i+offset] = pu8LinkRxBuffer[i+blockstart+8];
 		}
-		if( size+offset>dataLength ) 
-        {
+		if( size+offset>dataLength ) {
 			dataLength=size+offset;
         }
-
 		PDM_eSaveRecordData( addr, &tmp, dataLength );
-	}
-    else
-    {
+	}else {
 		PDM_eSaveRecordData( addr, &pu8LinkRxBuffer[blockstart + 8], size );
 	}
-
    	vLog_Printf ( TRUE, LOG_INFO, "\n**Restored %04x [%04x] pkt[%04x]**\n", addr, size, u16PacketLength );
-
     tmp[0]=size;
-    
     vSL_WriteMessage ( E_SL_MSG_RESTORE_PDM_RECORD_RESPONSE, 2, tmp, 0 );
 }
 /****************************************************************************
@@ -3347,9 +3794,9 @@ PUBLIC bool APP_bSendHATransportKey ( uint16    u16ShortAddress,
 {
     bool_t          bStatus     =  TRUE;
     ZPS_teStatus    eStatus;
-    uint16          u16Location;
-    AESSW_Block_u   uKey;
-    bool_t          bCredPresent =  FALSE;
+    //uint16          u16Location;
+    //AESSW_Block_u   uKey;
+    //bool_t          bCredPresent =  FALSE;
 
     if( bBlackListEnable )
     {
@@ -3388,23 +3835,21 @@ PUBLIC bool APP_bSendHATransportKey ( uint16    u16ShortAddress,
            ZTIMER_eStart ( u8HaModeTimer, ZTIMER_TIME_MSEC ( 500 ) );
         }
     }
-
-    bCredPresent = zps_bGetFlashCredential ( u64DeviceAddress,  &uKey, &u16Location, FALSE, FALSE  );
-    if ( ( bSetTclkFlashFeature) ||
+    //bCredPresent = zps_bGetFlashCredential ( u64DeviceAddress,  &uKey, &u16Location, FALSE, FALSE  );
+    if ( ( bSetTclkFlashFeature) && //||
          ( u8Status == 1) )
     {
         extern uint32    sZpsIntStore;
         extern PUBLIC void* zps_vGetZpsMutex ( void );
         ZPS_u8ReleaseMutexLock ( zps_vGetZpsMutex , &sZpsIntStore );
-        uint8 au8Key[16] = { 0x5a, 0x69, 0x67, 0x42, 0x65, 0x65, 0x41,
-                                  0x6c, 0x6c, 0x69, 0x61, 0x6e, 0x63, 0x65, 0x30, 0x39 };
+        uint8 au8Key[16] = { 0x5a, 0x69, 0x67, 0x42, 0x65, 0x65, 0x41, 0x6c, 0x6c, 0x69, 0x61, 0x6e, 0x63, 0x65, 0x30, 0x39 }; // ZigBeeAlliance09
 
         ZPS_eAplZdoAddReplaceLinkKey( u64DeviceAddress, au8Key,   ZPS_APS_UNIQUE_LINK_KEY);
         /*If credential is present roll back to confirm that key is used and not install code */
-        if(bCredPresent)
-        {
-            asTclkStruct[u16Location].u16TclkRetries = 0xFFFF;
-        }
+        //if(bCredPresent)
+        //{
+        //   asTclkStruct[u16Location].u16TclkRetries = 0xFFFF;
+        //}
 
         ZPS_u8GrabMutexLock ( zps_vGetZpsMutex , &sZpsIntStore );
         bStatus = TRUE;

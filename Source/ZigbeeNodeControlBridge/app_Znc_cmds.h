@@ -65,6 +65,12 @@ PUBLIC void vSendStatus ( uint8          u8Status,
                           const char*    pcMessage );
 
 PUBLIC void APP_vProcessIncomingSerialCommands ( uint8    u8RxByte );
+PUBLIC void APP_BackupPDM( void );
+PUBLIC void APP_GetNetBackupTbl( void );
+PUBLIC void APP_GetActiveDevicesBackupTbl( void );
+PUBLIC void APP_GetDevicesBackupTbl( void );
+PUBLIC void APP_GetDevicesBackupTblShow( void );
+
 /****************************************************************************/
 /***        External Variables                                            ***/
 /****************************************************************************/

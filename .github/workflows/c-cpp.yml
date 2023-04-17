@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0                # fetch the whole repo history
       - name: Get toolchain
         run: mkdir -p ${{ env.SDK_DIR }}/Tools && wget https://github.com/openlumi/BA2-toolchain/releases/download/20201219/ba-toolchain-20201219.tar.bz2 -O - | tar -jx -C ${{ env.SDK_DIR }}/Tools && ln -s ba-toolchain ${{ env.SDK_DIR }}/Tools/ba-elf-ba2-r36379
       - name: Install xmltodict
@@ -20,7 +22,7 @@ jobs:
       - name: make
         id: make
         run: |
-          for CHIP in JN5169 JN5168; do for BAUD in 115200 1000000; do for GP in 0 1; do for DEBUG in NONE LOG; do
+          for CHIP in JN5169; do for BAUD in 115200 1000000; do for GP in 0; do for DEBUG in NONE LOG; do
             make -j$(($(nproc)+1)) -C $BUILD_DIR GP_SUPPORT=$GP BAUD=$BAUD JENNIC_CHIP=$CHIP JENNIC_CHIP_FAMILY=JN516x DEBUG=$DEBUG OTA=0
             make -C $BUILD_DIR BAUD=0 clean
           done done done done
@@ -38,8 +40,10 @@ jobs:
         id: tag
         if: github.ref == 'refs/heads/main' && !cancelled()
         run: |
-          echo "::set-output name=release_tag::${GITHUB_SHA::4}--$(date +"%Y%m%d-%H%M")"
-          echo "::set-output name=status::success"
+          var=`git rev-list --count HEAD`
+          ver=`printf "10%02x" ${var}`
+          echo "release_tag=${ver}--$(date +"%Y%m%d-%H%M")" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
 
       - name: Create changelog
         id: create_changelog

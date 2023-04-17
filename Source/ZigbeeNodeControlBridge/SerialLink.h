@@ -322,6 +322,21 @@ typedef enum
     E_SL_MSG_RESTORE_PDM_RECORD_REQUEST                         =  0x0B01,
     E_SL_MSG_RESTORE_PDM_RECORD_RESPONSE                        =  0x8B01,
     E_SL_MSG_RESTORE_PDM_MODE                                   =  0x0B02,
+    E_SL_MSG_RESTORE_RUNNING_STATE_REQUEST                      =  0x0B03,
+    E_SL_MSG_FULL_INFO_REQ										=  0x0B04,
+    E_SL_MSG_NET_BACKUP_REQ                                     =  0x0B05,
+    E_SL_MSG_NET_BACKUP_RESPONSE                                =  0x8B05,
+    E_SL_MSG_DEVICES_BACKUP_REQ                            		=  0x0B06,
+    E_SL_MSG_DEVICES_BACKUP_RESPONSE                            =  0x8B06,
+    E_SL_MSG_ACTIVEDEVICES_BACKUP_REQ                      		=  0x0B07,
+    E_SL_MSG_ACTIVEDEVICES_BACKUP_RESPONSE                      =  0x8B07,
+
+
+    E_SL_MSG_RESTORE_NET_BACKUP_REQUEST                         =  0x0B15,
+    E_SL_MSG_RESTORE_NET_BACKUP_RESPONSE                        =  0x8B15,
+    E_SL_MSG_RESTORE_DEVICE_BACKUP_REQUEST                     =  0x0B16,
+    E_SL_MSG_RESTORE_DEVICE_BACKUP_RESPONSE                    =  0x8B16,
+
 
 } teSL_MsgType;
 typedef enum
