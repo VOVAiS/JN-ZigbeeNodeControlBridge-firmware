@@ -2552,7 +2552,7 @@ PRIVATE void APP_DeviceRestore(uint8 *pu8LinkRxBuffer, uint16 u16PacketLength) {
 }
 PUBLIC void APP_GetDevicesBackupTblShow( void ) {
     uint16 u16DataBytesRead;
-    uint16 i;
+    uint16 i=0;
     uint8 size;
 	uint32 pu32a,pu32b;
     ZPS_tsNwkNib * thisNib = ZPS_psNwkNibGetHandle(ZPS_pvAplZdoGetNwkHandle());
@@ -2568,6 +2568,33 @@ PUBLIC void APP_GetDevicesBackupTblShow( void ) {
     ZPS_tsNWkNibPersist tmpZPS_tsNWkNibPersist;
     tsZllState tmptsZllState;
 
+
+    vLog_Printf ( TRUE, LOG_INFO, "AddressMapTableSize: %d: Record size %d: Total: %d b", ZPS_ADDRESS_MAP_TABLE_SIZE, 4, ZPS_ADDRESS_MAP_TABLE_SIZE * 4);
+    i+=ZPS_ADDRESS_MAP_TABLE_SIZE * 4;
+    vLog_Printf ( TRUE, LOG_INFO, "MacTableSize: %d: Record size %d: Total: %d b", ZPS_MAC_ADDRESS_TABLE_SIZE, 10, ZPS_MAC_ADDRESS_TABLE_SIZE * 10);
+    i+=ZPS_MAC_ADDRESS_TABLE_SIZE * 10;
+    vLog_Printf ( TRUE, LOG_INFO, "ChildTableSize: %d: Record size %d: Total: %d b", ZPS_CHILD_TABLE_SIZE, 5, ZPS_CHILD_TABLE_SIZE * 5);
+    i+=ZPS_CHILD_TABLE_SIZE * 5;
+    vLog_Printf ( TRUE, LOG_INFO, "ActiveNeighbourTableSize: %d: Record size %d: Total: %d b", thisNib->sTblSize.u16NtActv, sizeof(ZPS_tsNwkActvNtEntry), (thisNib->sTblSize.u16NtActv * sizeof(ZPS_tsNwkActvNtEntry)));
+    i+=(thisNib->sTblSize.u16NtActv * sizeof(ZPS_tsNwkActvNtEntry));
+    vLog_Printf ( TRUE, LOG_INFO, "RoutingTableSize: %d: Record size %d: Total: %d b", thisNib->sTblSize.u16Rt, sizeof(ZPS_tsNwkRtEntry),(thisNib->sTblSize.u16Rt * sizeof(ZPS_tsNwkRtEntry)));
+    i+=(thisNib->sTblSize.u16Rt * sizeof(ZPS_tsNwkRtEntry));
+    vLog_Printf ( TRUE, LOG_INFO, "RouteRecordTableSize: %d: Record size %d: Total: %d b", thisNib->sTblSize.u16Rct, sizeof(ZPS_tsNwkRctEntry), (thisNib->sTblSize.u16Rct * sizeof(ZPS_tsNwkRctEntry)));
+    i+=(thisNib->sTblSize.u16Rct * sizeof(ZPS_tsNwkRctEntry));
+    vLog_Printf ( TRUE, LOG_INFO, "DiscoveryNeighbourTableSize: %d: Record size %d: Total: %d b", thisNib->sTblSize.u16Rct, sizeof(ZPS_tsNwkDiscNtEntry), (thisNib->sTblSize.u16Rct * sizeof(ZPS_tsNwkDiscNtEntry)));
+    i+=(thisNib->sTblSize.u16Rct * sizeof(ZPS_tsNwkDiscNtEntry));
+    vLog_Printf ( TRUE, LOG_INFO, "RouteDiscoveryTableSize: %d: Record size %d: Total: %d b", thisNib->sTblSize.u8RtDisc, sizeof(ZPS_tsNwkRtDiscEntry), (thisNib->sTblSize.u8RtDisc * sizeof(ZPS_tsNwkRtDiscEntry)));
+    i+=(thisNib->sTblSize.u8RtDisc * sizeof(ZPS_tsNwkRtDiscEntry));
+    vLog_Printf ( TRUE, LOG_INFO, "BroadcastTransactionTableSize: %d: Record size %d: Total: %d b", thisNib->sTblSize.u8Btt, sizeof(ZPS_tsNwkBtr), (thisNib->sTblSize.u8Btt * sizeof(ZPS_tsNwkBtr)));
+    i+=(thisNib->sTblSize.u8Btt * sizeof(ZPS_tsNwkBtr));
+	vLog_Printf ( TRUE, LOG_INFO, "SecurityMaterialSets: %d: Record size %d: Total: %d b", thisNib->sTblSize.u8SecMatSet, sizeof(ZPS_tsNwkSecMaterialSet), (thisNib->sTblSize.u8SecMatSet * sizeof(ZPS_tsNwkSecMaterialSet)));
+    i+=(thisNib->sTblSize.u8SecMatSet * sizeof(ZPS_tsNwkSecMaterialSet));
+	vLog_Printf ( TRUE, LOG_INFO, "BindingTableSize: %d: Record size %d: Total: %d b", ZPS_BINDING_TABLE_SIZE, sizeof(ZPS_tsAplApsmeBindingTableStoreEntry), ZPS_BINDING_TABLE_SIZE * sizeof(ZPS_tsAplApsmeBindingTableStoreEntry));
+    i+=ZPS_BINDING_TABLE_SIZE * sizeof(ZPS_tsAplApsmeBindingTableStoreEntry);
+	vLog_Printf ( TRUE, LOG_INFO, "GroupTableSize: %d: Record size %d: Total: %d b", ZPS_GROUP_TABLE_SIZE, sizeof(ZPS_tsAplApsmeGroupTableEntry), ZPS_GROUP_TABLE_SIZE * sizeof(ZPS_tsAplApsmeGroupTableEntry));
+    i+=ZPS_GROUP_TABLE_SIZE * sizeof(ZPS_tsAplApsmeGroupTableEntry);
+	vLog_Printf ( TRUE, LOG_INFO, "TotalTableSize: %d b", i);
+	vLog_Printf ( TRUE, LOG_INFO, " ");
     PDM_eReadDataFromRecord ( PDM_ID_APP_ZLL_CMSSION, &tmptsZllState, sizeof ( tsZllState ), &u16DataBytesRead );
     vLog_Printf ( TRUE, LOG_INFO, "\nChannel: %d", tmptsZllState.u8MyChannel);
     vLog_Printf ( TRUE, LOG_INFO, "\nAddr: %04x", tmptsZllState.u16MyAddr);
@@ -2598,17 +2625,6 @@ PUBLIC void APP_GetDevicesBackupTblShow( void ) {
 	PDM_eGetBitmap(0xF106, &pu32a, &pu32b);
 	vLog_Printf ( TRUE, LOG_INFO, "\n\nCounter bitmap: %d (%08x) base %d + %d", pu32a + pu32b, pu32a + pu32b, pu32a, pu32b );
 
-	vLog_Printf ( TRUE, LOG_INFO, "\n\n ActiveNeighbourTableSize: %d AddressMapTableSize: %d MacTableSize: %d RoutingTableSize: %d ChildTableSize: %d SecurityMaterialSets: %d BindingTableSize: %d GroupTableSize: %d",
-		ZPS_NEIGHBOUR_TABLE_SIZE, ZPS_ADDRESS_MAP_TABLE_SIZE, ZPS_MAC_ADDRESS_TABLE_SIZE, ZPS_ROUTING_TABLE_SIZE, ZPS_CHILD_TABLE_SIZE, ZPS_BINDING_TABLE_SIZE, ZPS_GROUP_TABLE_SIZE
-	);
-
-    vLog_Printf ( TRUE, LOG_INFO, "NT: Size: %d: Record %d: %d: Total: %d ", thisNib->sTblSize.u16NtActv, sizeof(ZPS_tsNwkActvNtEntry), (thisNib->sTblSize.u16NtActv * sizeof(ZPS_tsNwkActvNtEntry)));
-
-    vLog_Printf ( TRUE, LOG_INFO, "Routing Table: Size: %d: Record %d: %d: Total: %d ", thisNib->sTblSize.u16Rt, sizeof(ZPS_tsNwkRtEntry),(thisNib->sTblSize.u16Rt * sizeof(ZPS_tsNwkRtEntry)));
-
-    vLog_Printf ( TRUE, LOG_INFO, "Route Record: Size: %d: Record %d: %d: Total: %d ", thisNib->sTblSize.u16Rct, sizeof(ZPS_tsNwkRctEntry), (thisNib->sTblSize.u16Rct * sizeof(ZPS_tsNwkRctEntry)));
-
-	//: %d RouteDiscoveryTableSize: %d BroadcastTransactionTableSize: %d RouteRecordTableSize: %d
     uint8 tmpBindingTable[ZPS_BINDING_TABLE_SIZE * 8];
     PDM_eReadDataFromRecord ( PDM_ID_INTERNAL_BINDS, &tmpBindingTable,  ZPS_BINDING_TABLE_SIZE * 8, &u16DataBytesRead );
     for(i = 0; i < ZPS_BINDING_TABLE_SIZE * 8; i++) {
